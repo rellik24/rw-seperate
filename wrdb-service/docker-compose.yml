@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  postgres-master:
+    image: postgres:14
+    container_name: postgres-master
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: demo
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-master-data:/var/lib/postgresql/data
+      - ./init-master.sh:/docker-entrypoint-initdb.d/init-master.sh
+    networks:
+      - postgres-network
+
+  postgres-slave:
+    image: postgres:14
+    container_name: postgres-slave
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: demo
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres-slave-data:/var/lib/postgresql/data
+      - ./init-slave.sh:/docker-entrypoint-initdb.d/init-slave.sh
+    networks:
+      - postgres-network
+    depends_on:
+      - postgres-master
+
+  pgpool:
+    image: pgpool/pgpool:4.4
+    container_name: pgpool
+    ports:
+      - "9999:9999"
+      - "9898:9898"
+    volumes:
+      - ./pgpool.conf:/usr/local/etc/pgpool.conf
+      - ./pool_hba.conf:/usr/local/etc/pool_hba.conf
+    environment:
+      PGPOOL_USERNAME: postgres
+      PGPOOL_PASSWORD: postgres
+    networks:
+      - postgres-network
+    depends_on:
+      - postgres-master
+      - postgres-slave
+
+networks:
+  postgres-network:
+    driver: bridge
+
+volumes:
+  postgres-master-data:
+  postgres-slave-data: 
