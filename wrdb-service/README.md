@@ -12,6 +12,10 @@ wrdb-service/
 ├── init-master.sh       # 主資料庫初始化腳本
 ├── init-slave.sh        # 從資料庫初始化腳本
 ├── setup.sh            # 環境設置腳本
+├── pgpool/             # Pgpool-II 配置目錄
+│   ├── pgpool.conf     # Pgpool-II 主要配置檔案
+│   ├── pool_hba.conf   # Pgpool-II 主機訪問控制檔案
+│   └── README.md       # Pgpool-II 配置說明
 └── README.md           # 說明文件
 ```
 
@@ -198,7 +202,49 @@ docker logs pgpool
 psql -h localhost -p 9999 -U postgres -d demo -c "show pool_status;"
 ```
 
-### 3. 常見問題解決
+### 3. 時間戳記處理問題
+
+如果 API 創建用戶時沒有自動設置時間戳記 (createdAt 和 updatedAt)：
+
+1. 檢查資料庫觸發器是否正常工作：
+   ```bash
+   docker exec -it postgres-master psql -U postgres -d demo -c "SELECT trigger_schema, trigger_name, event_object_schema, event_object_table, action_statement FROM information_schema.triggers WHERE event_object_table = 'users';"
+   ```
+
+2. 檢查 Spring Boot 實體處理：
+   - 確認 `@PrePersist` 和 `@PreUpdate` 方法已在實體類中配置
+   - 在 User.java 中添加以下代碼處理時間戳：
+     ```java
+     @PrePersist
+     protected void onCreate() {
+         createdAt = LocalDateTime.now();
+         updatedAt = LocalDateTime.now();
+     }
+     
+     @PreUpdate
+     protected void onUpdate() {
+         updatedAt = LocalDateTime.now();
+     }
+     ```
+
+3. 手動測試時間戳觸發器：
+   ```bash
+   docker exec -it postgres-master psql -U postgres -d demo -c "INSERT INTO users (name, email, password) VALUES ('觸發器測試', 'trigger@example.com', 'password');"
+   docker exec -it postgres-master psql -U postgres -d demo -c "SELECT name, email, created_at, updated_at FROM users WHERE email='trigger@example.com';"
+   ```
+
+4. 如果觸發器不工作，重新創建：
+   ```bash
+   docker exec -it postgres-master psql -U postgres -d demo -c "
+   DROP TRIGGER IF EXISTS update_users_updated_at ON users;
+   CREATE TRIGGER update_users_updated_at
+   BEFORE UPDATE ON users
+   FOR EACH ROW
+   EXECUTE FUNCTION update_updated_at_column();
+   "
+   ```
+
+### 4. 常見問題解決
 1. 如果主從複製中斷：
    ```bash
    # 在從庫上重新同步
@@ -270,6 +316,14 @@ curl -X POST http://localhost:8080/api/users \
 
 # 使用 httpie（更易讀）
 http POST :8080/api/users name="測試用戶" email="test@example.com" password="password123"
+
+# 如需手動添加時間戳記（若後端未自動處理）
+curl -X POST http://localhost:8080/api/users \
+  -H "Content-Type: application/json" \
+  -d '{"name": "測試用戶", "email": "test@example.com", "password": "password123", "createdAt": "'"$(date +%Y-%m-%dT%H:%M:%S)"'", "updatedAt": "'"$(date +%Y-%m-%dT%H:%M:%S)"'"}'
+
+# 使用指定時間戳的 httpie
+http POST :8080/api/users name="測試用戶" email="test@example.com" password="password123" createdAt="$(date +%Y-%m-%dT%H:%M:%S)" updatedAt="$(date +%Y-%m-%dT%H:%M:%S)"
 ```
 
 #### 查詢用戶
@@ -277,8 +331,54 @@ http POST :8080/api/users name="測試用戶" email="test@example.com" password=
 # 通過 ID 查詢
 curl http://localhost:8080/api/users/1
 
+# 使用 httpie 通過 ID 查詢
+http GET :8080/api/users/1
+
 # 通過 Email 查詢
 curl http://localhost:8080/api/users/email/test@example.com
+
+# 使用 httpie 通過 Email 查詢
+http GET :8080/api/users/email/test@example.com
+
+# 查詢多個用戶（如果 API 支援）
+curl http://localhost:8080/api/users
+
+# 使用 httpie 查詢所有用戶
+http GET :8080/api/users
+```
+
+#### 更新用戶資料
+```bash
+# 使用 curl 更新用戶資料
+curl -X PUT http://localhost:8080/api/users/1 \
+  -H "Content-Type: application/json" \
+  -d '{"name": "更新後的名稱", "email": "updated@example.com", "password": "newpassword"}'
+
+# 使用 httpie 更新用戶資料
+http PUT :8080/api/users/1 name="更新後的名稱" email="updated@example.com" password="newpassword" 
+```
+
+#### 刪除用戶
+```bash
+# 使用 curl 刪除用戶
+curl -X DELETE http://localhost:8080/api/users/1
+
+# 使用 httpie 刪除用戶
+http DELETE :8080/api/users/1
+```
+
+#### 批量測試
+```bash
+# 創建多個用戶進行測試
+for i in {1..5}; do
+  curl -X POST http://localhost:8080/api/users \
+    -H "Content-Type: application/json" \
+    -d '{"name": "批量測試用戶'$i'", "email": "batch'$i'@example.com", "password": "password'$i'"}'
+  echo ""
+done
+
+# 查詢所有用戶以驗證批量操作
+curl http://localhost:8080/api/users
 ```
 
 ### 3. 連接資訊
