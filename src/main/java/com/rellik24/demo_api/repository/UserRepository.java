@@ -1,6 +1,6 @@
-package com.rellik24.demoapi.repository;
+package com.rellik24.demo_api.repository;
 
-import com.rellik24.demoapi.entity.User;
+import com.rellik24.demo_api.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 

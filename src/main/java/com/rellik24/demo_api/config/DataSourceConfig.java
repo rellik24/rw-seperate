@@ -1,4 +1,4 @@
-package com.rellik24.demoapi.config;
+package com.rellik24.demo_api.config;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.ConfigurationProperties;

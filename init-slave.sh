@@ -15,8 +15,8 @@ echo "主資料庫已就緒，檢查複製槽狀態..."
 SLOT_EXISTS=$(PGPASSWORD="$REPLICATOR_PASSWORD" psql -h "$PRIMARY_HOST" -p "$PRIMARY_PORT" -U replicator -d "$POSTGRES_DB" -tAc "SELECT COUNT(*) FROM pg_replication_slots WHERE slot_name = 'replica_slot'")
 
 if [ "$SLOT_EXISTS" -eq "0" ]; then
-    echo "警告：在主庫上找不到複製槽 'replica_slot'，嘗試創建..."
-    PGPASSWORD="$REPLICATOR_PASSWORD" psql -h "$PRIMARY_HOST" -p "$PRIMARY_PORT" -U replicator -d "$POSTGRES_DB" -c "SELECT pg_create_physical_replication_slot('replica_slot');"
+    echo "錯誤：在主庫上找不到複製槽 'replica_slot'"
+    exit 1
 fi
 
 echo "複製槽檢查完成，開始配置從庫..."
@@ -40,6 +40,13 @@ PGPASSWORD="$REPLICATOR_PASSWORD" pg_basebackup \
     -R \
     -S replica_slot
 
+if [ $? -ne 0 ]; then
+    echo "錯誤：基礎備份失敗"
+    exit 1
+fi
+
+echo "基礎備份完成，開始配置從庫參數..."
+
 # 配置從資料庫
 cat > "$PGDATA/postgresql.conf" <<EOF
 # 基本設置
@@ -54,7 +61,7 @@ max_wal_senders = 10
 hot_standby_feedback = on
 
 # 主庫連接設置
-primary_conninfo = 'host=$PRIMARY_HOST port=$PRIMARY_PORT user=replicator password=$REPLICATOR_PASSWORD application_name=slave1 keepalives=1 keepalives_idle=60 keepalives_interval=10 keepalives_count=10'
+primary_conninfo = 'host=$PRIMARY_HOST port=$PRIMARY_PORT user=replicator password=$REPLICATOR_PASSWORD application_name=slave1 keepalives=1 keepalives_idle=60 keepalives_interval=10 keepalives_count=10 sslmode=prefer'
 primary_slot_name = 'replica_slot'
 recovery_target_timeline = 'latest'
 

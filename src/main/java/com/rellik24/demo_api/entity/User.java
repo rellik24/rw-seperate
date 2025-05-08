@@ -1,7 +1,8 @@
-package com.rellik24.demoapi.entity;
+package com.rellik24.demo_api.entity;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import java.time.LocalDateTime;
 
 @Data
 @Entity
@@ -19,4 +20,10 @@ public class User {
 
     @Column(nullable = false)
     private String password;
+    
+    @Column(name = "created_at", updatable = false)
+    private LocalDateTime createdAt;
+    
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
 } 

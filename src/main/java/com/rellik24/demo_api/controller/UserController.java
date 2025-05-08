@@ -1,7 +1,7 @@
-package com.rellik24.demoapi.controller;
+package com.rellik24.demo_api.controller;
 
-import com.rellik24.demoapi.entity.User;
-import com.rellik24.demoapi.service.UserService;
+import com.rellik24.demo_api.entity.User;
+import com.rellik24.demo_api.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;

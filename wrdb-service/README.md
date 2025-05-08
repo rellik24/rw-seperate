@@ -226,3 +226,224 @@ docker-compose down -v
 2. 主從複製可能需要一些時間同步
 3. 首次啟動時，從庫會自動從主庫同步數據
 4. 建議在生產環境中修改預設密碼
+
+# PostgreSQL 讀寫分離環境
+
+## 快速啟動
+```bash
+# 啟動所有服務
+./setup.sh
+```
+
+## 展示指令
+
+### 1. 資料庫操作指令
+
+#### 查看主資料庫數據
+```bash
+docker exec -it postgres-master psql -U postgres -d demo -c "SELECT * FROM users;"
+```
+
+#### 查看從資料庫數據
+```bash
+docker exec -it postgres-slave psql -U postgres -d demo -c "SELECT * FROM users;"
+```
+
+#### 在主資料庫插入測試數據
+```bash
+docker exec -it postgres-master psql -U postgres -d demo -c "INSERT INTO users (name, email, password) VALUES ('測試用戶1', 'test1@example.com', 'password1');"
+```
+
+#### 檢查主從複製狀態
+```bash
+docker exec -it postgres-master psql -U postgres -d demo -c "SELECT * FROM pg_stat_replication;"
+```
+
+### 2. REST API 測試指令
+
+#### 創建用戶
+```bash
+# 使用 curl
+curl -X POST http://localhost:8080/api/users \
+  -H "Content-Type: application/json" \
+  -d '{"name": "測試用戶", "email": "test@example.com", "password": "password123"}'
+
+# 使用 httpie（更易讀）
+http POST :8080/api/users name="測試用戶" email="test@example.com" password="password123"
+```
+
+#### 查詢用戶
+```bash
+# 通過 ID 查詢
+curl http://localhost:8080/api/users/1
+
+# 通過 Email 查詢
+curl http://localhost:8080/api/users/email/test@example.com
+```
+
+### 3. 連接資訊
+
+#### 主資料庫
+- Host: localhost
+- Port: 5432
+- Database: demo
+- Username: postgres
+- Password: postgres
+
+#### 從資料庫
+- Host: localhost
+- Port: 5433
+- Database: demo
+- Username: postgres
+- Password: postgres
+
+#### Pgpool 連接（推薦）
+- Host: localhost
+- Port: 9999
+- Database: demo
+- Username: postgres
+- Password: postgres
+
+## 驗證讀寫分離
+
+1. 插入數據到主庫：
+```bash
+docker exec -it postgres-master psql -U postgres -d demo -c "INSERT INTO users (name, email, password) VALUES ('展示用戶', 'demo@example.com', 'password');"
+```
+
+2. 立即在主庫查看：
+```bash
+docker exec -it postgres-master psql -U postgres -d demo -c "SELECT * FROM users WHERE email='demo@example.com';"
+```
+
+3. 在從庫查看（驗證複製）：
+```bash
+docker exec -it postgres-slave psql -U postgres -d demo -c "SELECT * FROM users WHERE email='demo@example.com';"
+```
+
+## 常用操作指令
+
+### 環境管理
+```bash
+# 停止所有服務
+docker-compose down
+
+# 停止並清除所有數據
+docker-compose down -v
+
+# 查看服務狀態
+docker-compose ps
+
+# 查看服務日誌
+docker-compose logs -f
+```
+
+### 數據庫管理
+```bash
+# 連接到主庫 psql
+docker exec -it postgres-master psql -U postgres -d demo
+
+# 連接到從庫 psql
+docker exec -it postgres-slave psql -U postgres -d demo
+
+# 查看表結構
+\d users
+
+# 退出 psql
+\q
+```
+
+# PostgreSQL 主從複製示範
+
+本專案設置了一個基於 Docker 的 PostgreSQL 主從複製架構，包含以下組件：
+
+- 主資料庫 (Master)
+- 從資料庫 (Slave/Replica)
+- PgPool-II 連接池和負載平衡器
+
+## 快速啟動
+
+### 1. 啟動服務
+
+```bash
+# 如果之前啟動過，先停止並移除舊容器
+docker-compose down
+
+# 啟動所有服務
+docker-compose up -d
+```
+
+### 2. 驗證主從狀態
+
+執行測試腳本驗證主從複製狀態：
+
+```bash
+./test-replication-docker.sh
+```
+
+### 3. 主要操作示範
+
+#### 查看複製槽狀態
+
+```bash
+docker exec postgres-master psql -U postgres -d demo -c "SELECT slot_name, slot_type, active FROM pg_replication_slots;"
+```
+
+#### 檢查複製連接
+
+```bash
+docker exec postgres-master psql -U postgres -d demo -c "SELECT pid, application_name, client_addr, state, sync_state FROM pg_stat_replication;"
+```
+
+#### 確認從庫恢復模式
+
+```bash
+docker exec postgres-slave psql -U postgres -d demo -c "SELECT pg_is_in_recovery();"
+```
+
+#### 寫入測試
+
+在主庫寫入資料：
+
+```bash
+docker exec postgres-master psql -U postgres -d demo -c "INSERT INTO users (name, email, password) VALUES ('會議演示', 'demo@example.com', 'password123') RETURNING id;"
+```
+
+在從庫查詢資料 (確認同步)：
+
+```bash
+docker exec postgres-slave psql -U postgres -d demo -c "SELECT * FROM users WHERE email='demo@example.com';"
+```
+
+#### 通過連接池訪問
+
+```bash
+docker exec pgpool psql -h localhost -p 5432 -U postgres -d demo -c "SELECT * FROM users;"
+```
+
+## 架構說明
+
+### 主庫 (Master)
+
+- 接受讀寫操作
+- 維護複製槽 (replica_slot)
+- 將 WAL 日誌傳送至從庫
+
+### 從庫 (Slave)
+
+- 唯讀操作
+- 透過複製槽接收 WAL 日誌
+- 自動從主庫同步資料
+
+### 連接池 (PgPool)
+
+- 負載平衡
+- 讀寫分離 (寫操作導向主庫，讀操作可分配到從庫)
+- 高可用性管理
+
+## 重要檔案
+
+- `init-master.sh`: 主庫初始化腳本
+- `init-slave.sh`: 從庫初始化腳本
+- `test-replication-docker.sh`: 測試主從複製狀態的腳本
+- `docker-compose.yml`: 容器配置檔案
